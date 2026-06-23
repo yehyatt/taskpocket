@@ -160,6 +160,10 @@
     <div class="createdline" id="eCreated"></div>
   </div>
   <div class="field">
+    <label>Details (optional)</label>
+    <textarea id="eNote" placeholder="Notes, links, reference numbers…" style="min-height:80px;"></textarea>
+  </div>
+  <div class="field">
     <label>Context</label>
     <div class="opts" id="eCtx"></div>
   </div>
@@ -239,6 +243,10 @@ function toMd(){
     if(t.due) s += ` due:${t.due}`;
     if(t.done) s += ` done:${t.done}`;
     s += ` id:${t.id}`;
+    if(t.note && t.note.trim()){
+      // each note line indented two spaces so it nests under the task and stays readable
+      s += "\n" + t.note.replace(/\r/g,"").split("\n").map(l=>"  "+l).join("\n");
+    }
     return s;
   };
   return "# TaskPocket\n\n" + tasks.map(line).join("\n") + "\n";
@@ -247,7 +255,15 @@ function fromMd(md){
   const out = [];
   md.split("\n").forEach(raw=>{
     const m = raw.match(/^- \[([ x])\]\s+(.*)$/);
-    if(!m) return;
+    if(!m){
+      // an indented, non-task line belongs to the previous task as a note line
+      if(out.length && /^\s{2,}\S/.test(raw)){
+        const prev = out[out.length-1];
+        const noteLine = raw.replace(/^\s{2}/,"");
+        prev.note = prev.note ? prev.note+"\n"+noteLine : noteLine;
+      }
+      return;
+    }
     const done0 = m[1]==="x";
     let rest = m[2];
     const grab = (re)=>{ const x = rest.match(re); if(x){ rest = rest.replace(x[0],"").trim(); return x[1]; } return null; };
@@ -258,7 +274,7 @@ function fromMd(md){
     const pri = grab(/\s!([123])\b/);
     const ctx = grab(/\s#(\w+)/);
     const text = rest.trim();
-    out.push({id,text,ctx:ctx||"",pri:pri?+pri:0,created,due:due||"",done:done0?(done||today()):""});
+    out.push({id,text,ctx:ctx||"",pri:pri?+pri:0,created,due:due||"",done:done0?(done||today()):"",note:""});
   });
   return out;
 }
@@ -324,7 +340,7 @@ function addTask(raw){
   const c = text.match(/\s#(\w+)/); if(c){ ctx=c[1].toLowerCase(); text=text.replace(c[0],""); }
   const p = text.match(/\s!([123])\b/); if(p){ pri=+p[1]; text=text.replace(p[0],""); }
   if(ctx && !CTX.includes(ctx)) ctx = ""; // ignore unknown contexts
-  tasks.push({id:uid(),text:text.trim(),ctx,pri,created:today(),due:"",done:""});
+  tasks.push({id:uid(),text:text.trim(),ctx,pri,created:today(),due:"",done:"",note:""});
   commit();
 }
 function toggle(id){
@@ -338,6 +354,7 @@ function openEdit(id){
   document.getElementById("eText").value = t.text;
   document.getElementById("eCreated").textContent = "Created "+fmtDue(t.created)+" "+t.created.slice(0,4);
   document.getElementById("eDue").value = t.due||"";
+  document.getElementById("eNote").value = t.note||"";
   const ctxWrap = document.getElementById("eCtx");
   ctxWrap.innerHTML = CTX.map(c=>`<span class="opt ${t.ctx===c?"on":""}" data-c="${c}">${CTX_LABEL[c]}</span>`).join("");
   document.querySelectorAll("#ePri .opt").forEach(o=>o.classList.toggle("on", +o.dataset.p===(t.pri||2)));
@@ -347,6 +364,7 @@ function saveEdit(){
   const t = tasks.find(x=>x.id===editingId); if(!t) return;
   t.text = document.getElementById("eText").value.trim() || t.text;
   t.due = document.getElementById("eDue").value || "";
+  t.note = document.getElementById("eNote").value.replace(/\r/g,"").trim();
   const onC = document.querySelector("#eCtx .opt.on"); t.ctx = onC?onC.dataset.c:"";
   const onP = document.querySelector("#ePri .opt.on"); t.pri = onP?+onP.dataset.p:0;
   hideSheets(); commit();
